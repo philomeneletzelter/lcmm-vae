@@ -96,7 +96,6 @@ class LCMMVAE:
             epochs=config['training']['epochs'],
             tol=config['training']['tol'],
             estep_sweeps=config['model']['estep_sweeps'],
-            estep_sweeps_infer=config['model']['estep_sweeps_infer'],
             device=device)
 
         self.config_ = config

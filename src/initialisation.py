@@ -76,7 +76,8 @@ def _em(codes, pi, B, D, sigma_eps2, max_iter, eps, min_iter):
 
 
 @torch.no_grad()
-def initialise_from_pretrained(pretrained, model, train_loader, seed, init_ridge, init_tries):
+def initialise_from_pretrained(pretrained, model, train_loader, seed, init_ridge, init_tries,
+                               label='em-EM initialisation'):
     """
     Initialisation by em-EM (Biernacki, Celeux & Govaert 2003): init_tries short EM runs
     (EM_EM), the best continued by EM.
@@ -94,10 +95,12 @@ def initialise_from_pretrained(pretrained, model, train_loader, seed, init_ridge
     - seed (int): seed for the subjects drawn by em-EM.
     - init_ridge (float): ridge of the per-subject regressions.
     - init_tries (int): number of em-EM runs.
+    - label (str): name of the step in the console output.
 
     Returns:
     - model (LCMMVAENet): the same model, initialised.
     """
+    print(f"\n--- {label} ---")
     model.encoder.load_state_dict(pretrained.encoder.state_dict())
     model.decoder.load_state_dict(pretrained.decoder.state_dict())
     model._log_vy.copy_(pretrained._log_vy)
@@ -144,10 +147,9 @@ def initialise_from_pretrained(pretrained, model, train_loader, seed, init_ridge
                 "n_basis, use knots: quantile, or restrict t to the follow-up range) or too "
                 "many covariates")
     fit = _em(codes, best['pi'], best['B'], best['D'], sigma_eps2, **EM)
-    print(f"  [init] em-EM + EM: loglik {fit['loglik']:.1f}"
+    print(f"log-likelihood {fit['loglik']:.1f}"
           + ("" if fit['converged'] else f", stopped at {EM['max_iter']} iterations")
-          + f", subjects per class "
-            f"{torch.bincount(fit['gamma'].argmax(1), minlength=G).tolist()}")
+          + f", class sizes {torch.bincount(fit['gamma'].argmax(1), minlength=G).tolist()}")
     if fit['degenerate']:
         warnings.warn("a class kept its previous B^(g) during the final EM of the initialisation "
                       "(empty class or singular x_S^T x_S)")
@@ -159,7 +161,8 @@ def initialise_from_pretrained(pretrained, model, train_loader, seed, init_ridge
     return model
 
 
-def initialise(config, pretrained_model, train_loader, widths, G, seed, device='cpu'):
+def initialise(config, pretrained_model, train_loader, widths, G, seed, device='cpu',
+               label='em-EM initialisation'):
     """
     Build a G-class LCMMVAENet and initialise it from a trained G=1 model.
 
@@ -171,6 +174,7 @@ def initialise(config, pretrained_model, train_loader, widths, G, seed, device='
     - G (int): number of classes.
     - seed (int): training seed.
     - device (str): torch device.
+    - label (str): name of the step in the console output.
 
     Returns:
     - model (LCMMVAENet): initialised by em-EM.
@@ -179,4 +183,4 @@ def initialise(config, pretrained_model, train_loader, widths, G, seed, device='
     model = build_model(config, train_loader.dataset.n_markers, widths, G).to(device)
     return initialise_from_pretrained(pretrained_model, model, train_loader, seed=seed,
                                       init_ridge=config['model']['init_ridge'],
-                                      init_tries=config['model']['init_tries'])
+                                      init_tries=config['model']['init_tries'], label=label)

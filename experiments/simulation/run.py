@@ -5,7 +5,6 @@ MSE at the held-out subjects' dropped visits.
 usage: python -m experiments.simulation.run [--N 500] [--latent-dim L] [--out results]
 """
 import argparse
-import os
 from pathlib import Path
 
 import numpy as np
@@ -61,11 +60,7 @@ def main(args):
                                          R=0 if method == utils.R0 else 2,
                                          latent_dim=args.latent_dim)
 
-            def run_dir(method):
-                return os.path.join(args.out, "runs", DATASET, f"{mech}_N{args.N}",
-                                    utils.RUN_NAMES[method], f"seed{seed}")
-
-            for name, result in utils.fits(args.methods, load, seed, None, run_dir):
+            for name, result in utils.fits(args.methods, load, seed, None):
                 units = result['loader'].dataset.subject_ids
                 rows, x, sid = dropped_design(result['config'], result['design'], units)
                 y_hat = utils.reconstruct(result, x, sid).numpy()
@@ -92,5 +87,5 @@ if __name__ == "__main__":
     parser.add_argument('--latent-dim', type=int, default=None, help="overrides model.latent_dim")
     parser.add_argument('--data', default=str(sim.DATA),
                         help="cohort directory, written when missing")
-    parser.add_argument('--out', default=utils.RESULTS, help="output root: rows and checkpoints")
+    parser.add_argument('--out', default=utils.RESULTS, help="output root: result rows")
     main(parser.parse_args())

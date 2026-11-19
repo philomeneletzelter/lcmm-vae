@@ -1,15 +1,13 @@
-<div align="center">
-
-# Latent Class Mixed Model Variational Autoencoders for Scalable Phenotyping of Health Trajectories
-
-Philomène Letzelter, Violaine Courrier, Sandrine Katsahian, Agathe Guilloux<br>
-*Machine Learning for Health (ML4H) 2026*
-
-</div>
-
-LCMM-VAE is a variational autoencoder whose latent prior is a mixture of class-specific linear mixed models: each subject's latent trajectory is its class trajectory plus subject-specific random effects. It is fitted by variational EM, with the responsibilities, random effects and mixed-model parameters updated in closed form and the encoder, decoder and observation variance by gradient descent. A fitted model returns a partition of the subjects, a reconstruction of their incomplete trajectories and a decoded trajectory per class.
+# Latent Class Mixed Model Variational Autoencoders
 
 ![LCMM-VAE](assets/lcmm_vae.png)
+
+This repository is the official implementation of
+**Latent Class Mixed Model Variational Autoencoders for Scalable Phenotyping of Health Trajectories**
+(LCMM-VAE), by Philomène Letzelter, Violaine Courrier, Sandrine Katsahian and Agathe Guilloux,
+*Machine Learning for Health (ML4H) 2026*.
+
+LCMM-VAE is a variational autoencoder whose latent prior is a mixture of class-specific linear mixed models: each subject's latent trajectory is its class trajectory plus subject-specific random effects. It is fitted by variational EM, with the responsibilities, random effects and mixed-model parameters updated in closed form and the encoder, decoder and observation variance by gradient descent. A fitted model returns a partition of the subjects, a reconstruction of their incomplete trajectories and a decoded trajectory per class.
 
 ## Installation
 
@@ -38,17 +36,6 @@ python train.py --config configs/gait.yaml --out results/gait
 ```
 
 The fitted model is saved to `results/gait/model.pt`. Its interface is the `LCMMVAE` class in `src/estimator.py`: reload a fitted model with `LCMMVAE.load`; `labels_` gives the class of each subject, `class_trajectories(t)` the class trajectories and `reconstruct(data)` the individual trajectories (see the docstrings for the other outputs).
-
-## Reproducing the paper
-
-```bash
-python -m data_loader.gait
-python -m data_loader.physionet
-python -m experiments.simulation.run
-python -m experiments.gait.run
-python -m experiments.physionet.run
-python -m experiments.tables
-```
 
 ## Project structure
 

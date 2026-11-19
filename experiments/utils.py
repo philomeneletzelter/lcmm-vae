@@ -17,7 +17,6 @@ from src.utils import ROOT, load_config as _load_config, set_seed, make_optimise
 
 OURS, G1, R0 = "LCMM-VAE", "LCMM-VAE (G=1)", "LCMM-VAE (R=0)"
 METHODS = (OURS, R0, G1)  # table order
-RUN_NAMES = {OURS: "lcmm_vae", G1: "lcmm_vae_g1", R0: "lcmm_vae_r0"}
 RESULTS = str(ROOT / "results")
 
 
@@ -102,7 +101,7 @@ def eval_loader(config, data_dir, scaler, design):
     return DataLoader(dataset, batch_size=config['dataset']['batch_size'], shuffle=False)
 
 
-def _train(config, model, loader, save_dir, epochs=None):
+def _train(config, model, loader, epochs=None):
     """trainer.train to the DEC stop, or for exactly `epochs` epochs; returns the epochs run."""
     history = trainer.train(
         model=model,
@@ -110,9 +109,7 @@ def _train(config, model, loader, save_dir, epochs=None):
         loader=loader,
         epochs=config['training']['epochs'] if epochs is None else epochs,
         tol=config['training']['tol'] if epochs is None else None,
-        estep_sweeps=config['model']['estep_sweeps'],
-        estep_sweeps_infer=config['model']['estep_sweeps_infer'],
-        save_dir=save_dir)
+        estep_sweeps=config['model']['estep_sweeps'])
     return len(history['train_loss'])
 
 
@@ -126,7 +123,7 @@ def _assign(result, model, test_dir):
                 subject_ids=loader.dataset.subject_ids)
 
 
-def fit_lcmm_vae(config, seed, test_dir, out_dir):
+def fit_lcmm_vae(config, seed, test_dir):
     """
     LCMM-VAE fitted on the config's data (the pipeline of LCMMVAE.fit, keeping the
     heldout_fraction split), assigning the subjects of test_dir (None: the held-out split).
@@ -149,8 +146,7 @@ def fit_lcmm_vae(config, seed, test_dir, out_dir):
                                  lr=config['pretraining']['lr']),
         loader=train_loader,
         epochs=config['pretraining']['epochs'],
-        kl_annealing_epochs=config['pretraining']['kl_annealing_epochs'],
-        save_dir=os.path.join(out_dir, 'pretrain'))
+        kl_annealing_epochs=config['pretraining']['kl_annealing_epochs'])
     result = dict(train_loader=train_loader, heldout_loader=heldout_loader, widths=widths,
                   scaler=scaler, design=design, pretrained=pretrained_model, config=config,
                   pretrain_secs=time.time() - t0,
@@ -158,12 +154,12 @@ def fit_lcmm_vae(config, seed, test_dir, out_dir):
     model = initialise(config=config, pretrained_model=pretrained_model,
                        train_loader=train_loader, widths=widths,
                        G=config['model']['n_clusters'], seed=seed)
-    epochs = _train(config, model, train_loader, os.path.join(out_dir, 'lcmm'))
+    epochs = _train(config, model, train_loader)
     result = _assign(dict(result, model=model, recon=model, epochs=epochs), model, test_dir)
     return dict(result, secs=time.time() - t0)
 
 
-def fit_g1(lcmm_vae, seed, test_dir, out_dir):
+def fit_g1(lcmm_vae, seed, test_dir):
     """
     LCMM-VAE (G=1): trained at G=1 from the pretraining of `lcmm_vae` (fit_lcmm_vae's), on
     its minibatch sequence and for its LCMM-phase epochs, then partitioned by a G-class
@@ -178,16 +174,16 @@ def fit_g1(lcmm_vae, seed, test_dir, out_dir):
     g1_model = initialise(config=config, pretrained_model=lcmm_vae['pretrained'],
                           train_loader=train_loader, widths=lcmm_vae['widths'], G=1,
                           seed=seed)
-    epochs = _train(config, g1_model, train_loader, os.path.join(out_dir, 'lcmm'),
-                    epochs=int(lcmm_vae['epochs']))
+    epochs = _train(config, g1_model, train_loader, epochs=int(lcmm_vae['epochs']))
     model = initialise(config=config, pretrained_model=g1_model, train_loader=train_loader,
-                       widths=lcmm_vae['widths'], G=config['model']['n_clusters'], seed=seed)
+                       widths=lcmm_vae['widths'], G=config['model']['n_clusters'], seed=seed,
+                       label="em-EM partition of the G=1 fit")
     result = _assign(dict(lcmm_vae, model=model, recon=g1_model, epochs=epochs), model,
                      test_dir)
     return dict(result, secs=lcmm_vae['pretrain_secs'] + time.time() - t0)
 
 
-def fits(methods, load, seed, test_dir, run_dir):
+def fits(methods, load, seed, test_dir):
     """
     Yield (method, fit_lcmm_vae-style result) in run order; LCMM-VAE (G=1) continues from
     the LCMM-VAE fit, fitted for it when not requested.
@@ -197,15 +193,14 @@ def fits(methods, load, seed, test_dir, run_dir):
     - load (callable): method -> config.
     - seed (int): training seed.
     - test_dir (str): held-out data directory; None uses the heldout_fraction split.
-    - run_dir (callable): method -> checkpoint directory.
     """
     ours = None
     for name in sorted(methods, key=[OURS, G1, R0].index):
         if name == G1:
-            ours = ours or fit_lcmm_vae(load(OURS), seed, test_dir, run_dir(OURS))
-            yield name, fit_g1(ours, seed, test_dir, run_dir(G1))
+            ours = ours or fit_lcmm_vae(load(OURS), seed, test_dir)
+            yield name, fit_g1(ours, seed, test_dir)
             continue
-        result = fit_lcmm_vae(load(name), seed, test_dir, run_dir(name))
+        result = fit_lcmm_vae(load(name), seed, test_dir)
         if name == OURS:
             ours = result
         yield name, result

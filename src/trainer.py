@@ -6,10 +6,8 @@ LCMM-VAE epoch:
     M-step, closed      pi, D, B^(g) on the same cache
     M-step, gradient    minibatches, gamma/m/V frozen, Adam on encoder, decoder, sigma_y^2
 """
-import os
 import warnings
 
-import numpy as np
 import torch
 
 from src.datasets import ordered
@@ -103,27 +101,18 @@ def _gradient_epoch(optimiser, loader, loss_fn):
     return {name: total / len(loader) for name, total in totals.items()}
 
 
-def _save(model, history, save_dir):
-    if save_dir is None:
-        return
-    os.makedirs(save_dir, exist_ok=True)
-    np.save(os.path.join(save_dir, 'loss_metrics.npy'), history)
-    torch.save(model.state_dict(), os.path.join(save_dir, 'model_final.pt'))
-
-
-def _log(history, metrics, epoch, epochs, beta):
+def _record(history, metrics):
     for name, value in metrics.items():
         history.setdefault(f'train_{name}', []).append(value)
-    row = ", ".join(f"{name} {value:.4f}" for name, value in metrics.items()
-                    if not isinstance(value, list))
-    print(f"Epoch {epoch}/{epochs}, beta {beta:.3f} | train {row}")
 
 
-def pretrain(model, optimiser, loader, epochs, kl_annealing_epochs, save_dir=None,
-             device='cpu'):
+def _terms(metrics, names):
+    return "  ".join(f"{name} {metrics[name]:.2f}" for name in names)
+
+
+def pretrain(model, optimiser, loader, epochs, kl_annealing_epochs, device='cpu'):
     """
-    Train the G=1 LMM-VAE with a linear KL warm-up from 0 (Bowman et al. 2016). Saves
-    loss_metrics.npy and model_final.pt to save_dir.
+    Train the G=1 LMM-VAE with a linear KL warm-up from 0 (Bowman et al. 2016).
 
     Args:
     - model (LMMVAENet): the model, moved to device.
@@ -131,12 +120,12 @@ def pretrain(model, optimiser, loader, epochs, kl_annealing_epochs, save_dir=Non
     - loader (DataLoader): the training visits, shuffled.
     - epochs (int): number of epochs.
     - kl_annealing_epochs (int): warm-up length of the latent KL weight; 0 disables it.
-    - save_dir (str): output directory; None saves nothing.
     - device (str): torch device.
 
     Returns:
     - history (dict): per-epoch metrics, keyed 'train_<name>'.
     """
+    print("\n--- Pretraining (G=1) ---")
     model.to(device)
     history = {}
     for epoch in range(1, epochs + 1):
@@ -144,8 +133,9 @@ def pretrain(model, optimiser, loader, epochs, kl_annealing_epochs, save_dir=Non
                 else 1.0)
         metrics = _gradient_epoch(optimiser, loader,
                                   lambda b: pretrain_loss(model, b, beta, device))
-        _log(history, metrics, epoch, epochs, beta)
-    _save(model, history, save_dir)
+        _record(history, metrics)
+        print(f"Epoch {epoch}/{epochs} | beta {beta:.2f} | "
+              + _terms(metrics, ('loss', 'recon', 'kl_latent', 'kl_A')))
     return history
 
 
@@ -188,13 +178,11 @@ def _closed_form_block(model, cache, XtX_R, gamma_prev, sweeps):
     return gamma, V, m_g
 
 
-def train(model, optimiser, loader, epochs, tol, estep_sweeps, estep_sweeps_infer,
-          save_dir=None, device='cpu'):
+def train(model, optimiser, loader, epochs, tol, estep_sweeps, device='cpu'):
     """
     Train the LCMM-VAE. Each epoch runs the E-step and closed-form M-step on one cached
     encoder pass, then a gradient epoch with gamma, m and V frozen; KL weight 1. A final
-    closed-form block runs at the final encoder. Saves loss_metrics.npy, model_final.pt and
-    gamma.pt (training responsibilities, mean-field sweeps from pi) to save_dir.
+    closed-form block runs at the final encoder.
 
     Args:
     - model (LCMMVAENet): the initialised model, moved to device.
@@ -204,8 +192,6 @@ def train(model, optimiser, loader, epochs, tol, estep_sweeps, estep_sweeps_infe
     - tol (float): stop once fewer than this fraction of subjects change class between
       consecutive E-steps (DEC, Xie et al. 2016); None runs every epoch.
     - estep_sweeps (int): mean-field E-step sweeps per epoch.
-    - estep_sweeps_infer (int): mean-field E-step sweeps of the saved gamma.
-    - save_dir (str): output directory; None saves nothing.
     - device (str): torch device.
 
     Returns:
@@ -213,6 +199,10 @@ def train(model, optimiser, loader, epochs, tol, estep_sweeps, estep_sweeps_infe
     """
     model.to(device)
     prior = model.prior
+    print(f"\n--- Training LCMM-VAE (G={prior.G}) ---")
+    # kl_class is zero at G=1 and kl_re at R=0
+    shown = (['loss', 'recon', 'kl_latent'] + ['kl_class'] * (prior.G > 1)
+             + ['kl_re'] * (prior.dR > 0))
     N = loader.dataset.n_subjects
     xR, sid = [], []
     for batch in ordered(loader):
@@ -237,22 +227,17 @@ def train(model, optimiser, loader, epochs, tol, estep_sweeps, estep_sweeps_infe
         switched = ((hard != prev_hard).float().mean().item()
                     if prev_hard is not None else 1.0)
         prev_hard = hard.clone()
-        print(f"  [gamma] usage={usage}  switched={switched:.3f}")
 
         q = dict(gamma=gamma, m_g=m_g, V=V, n_i=n_i,
                  kl_re_i=(gamma.detach() * kl_re(m_g, V, prior.D)).sum(1))  # [N]
         metrics = _gradient_epoch(optimiser, loader, lambda b: lcmm_loss(model, b, q, device))
-        _log(history, dict(metrics, gamma_usage=usage, gamma_switched=switched), epoch,
-             epochs, 1.0)
+        _record(history, dict(metrics, gamma_usage=usage, gamma_switched=switched))
+        print(f"Epoch {epoch}/{epochs} | {_terms(metrics, shown)} | "
+              f"switched {switched:.3f}  sizes {usage}")
         if tol is not None and switched < float(tol):
-            print(f"  [stop] converged at epoch {epoch} of {epochs}")
+            print(f"Converged at epoch {epoch} of {epochs} "
+                  f"(fewer than {float(tol):g} of subjects changed class)")
             break
 
     _closed_form_block(model, model.encode_loader(loader), XtX_R, gamma, estep_sweeps)
-    _save(model, history, save_dir)
-    if save_dir is not None:
-        pi_start = prior.pi.detach().unsqueeze(0).expand(N, -1).clone()
-        gamma = model.e_step(model.encode_loader(loader), XtX_R, pi_start,
-                             estep_sweeps_infer)[0]
-        torch.save(gamma.cpu(), os.path.join(save_dir, 'gamma.pt'))
     return history

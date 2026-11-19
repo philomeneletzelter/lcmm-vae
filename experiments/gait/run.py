@@ -7,7 +7,6 @@ standardised by the training walks' observed cells.
 usage: python -m experiments.gait.run [--mech complete mcar channel] [--out results]
 """
 import argparse
-import os
 
 import numpy as np
 from sklearn.metrics import adjusted_rand_score
@@ -50,11 +49,7 @@ def main(args):
                     def load(method):
                         return utils.load_config("gait", seed, train_dir)
 
-                    def run_dir(method):
-                        return os.path.join(args.out, "runs", DATASET, f"{mech}{rate}",
-                                            utils.RUN_NAMES[method], f"seed{seed}")
-
-                    for name, result in utils.fits(args.methods, load, seed, test_dir, run_dir):
+                    for name, result in utils.fits(args.methods, load, seed, test_dir):
                         assert np.array_equal(result["subject_ids"], test["units"])
                         raw = utils.to_raw(utils.reconstruct(result).numpy()
                                            .reshape(test["Y"].shape), result["scaler"])
@@ -81,5 +76,5 @@ if __name__ == "__main__":
                         default=[utils.OURS, utils.G1], help="methods to fit")
     parser.add_argument("--seeds", nargs="+", type=int, default=list(range(30)),
                         help="held-out pair and training seeds")
-    parser.add_argument("--out", default=utils.RESULTS, help="output root: rows and checkpoints")
+    parser.add_argument("--out", default=utils.RESULTS, help="output root: result rows")
     main(parser.parse_args())

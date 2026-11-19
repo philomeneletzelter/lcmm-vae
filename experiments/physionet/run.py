@@ -6,7 +6,6 @@ imputation, and MSE at m_test_artificial.
 usage: python -m experiments.physionet.run [--seeds 0 1 ...] [--out results]
 """
 import argparse
-import os
 from pathlib import Path
 
 import numpy as np
@@ -79,12 +78,8 @@ def main(args):
         def load(method):
             return utils.load_config("physionet", seed)
 
-        def run_dir(method):
-            return os.path.join(args.out, "runs", DATASET, utils.RUN_NAMES[method],
-                                f"seed{seed}")
-
         test_dir = test_panel(load(None), test_set)
-        for name, result in utils.fits(args.methods, load, seed, test_dir, run_dir):
+        for name, result in utils.fits(args.methods, load, seed, test_dir):
             imputation = utils.to_raw(utils.reconstruct(result), result["scaler"])
             imputation = imputation.reshape(-1, T, K)
             row = dict(method=name, seed=seed, auroc=their_auroc(imputation, test_set),
@@ -103,5 +98,5 @@ if __name__ == "__main__":
                         help="training seeds")
     parser.add_argument("--data", default=str(ROOT / "data" / "physionet"),
                         help="directory of physionet.npz")
-    parser.add_argument("--out", default=utils.RESULTS, help="output root: rows and checkpoints")
+    parser.add_argument("--out", default=utils.RESULTS, help="output root: result rows")
     main(parser.parse_args())
