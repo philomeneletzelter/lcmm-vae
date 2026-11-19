@@ -1,0 +1,38 @@
+# Config for your own data. Keys marked SET depend on the dataset; the others are the
+# settings of the paper's runs and can be left as they are.
+dataset:
+  data_path: "./data/your_data/"  # SET: directory of data.csv, mask.csv and label.csv
+  batch_size: 512                 
+  covariates:
+    n_basis: 6                    # SET: B-spline functions of time 
+    knots: quantile               # quantile (of the training visit times) or uniform
+    terms:
+      - {block: fixed, transform: bspline}              # time basis of the class trajectories
+      # - {block: random, transform: intercept_slope}   # random intercept and slope (R = 2)
+      # - {block: fixed, transform: columns, columns: [age, sex]}
+ 
+model:
+  n_clusters: 3                   # SET: number of classes G
+  latent_dim: 10                  # SET
+  encoder_hidden_dims: [128, 64]  # SET
+  decoder_hidden_dims: [64, 128]
+  vy_init: 1.0                    # initial sigma_y^2
+  sigma_eps2: 1.0                 # latent residual variance, fixed
+  d_init: 1.0                     # initial D_l = d_init * I
+  min_D_diag: 0.001               # min_D_diag^2 added to the diagonal of D_l
+  init_ridge: 0.001               # ridge of the per-subject regressions of the initialisation
+  init_tries: 50                  # em-EM runs
+  posterior: meanfield            # q(c) q(a), or structured: q(c) q(a | c)
+  estep_sweeps: 1                 # mean-field E-step sweeps per epoch
+  estep_sweeps_infer: 20          # mean-field E-step sweeps at inference
+
+pretraining:
+  epochs: 10                      # G=1 pretraining epochs
+  kl_annealing_epochs: 10         # length of the linear KL warm-up
+  lr: 0.001
+
+training:
+  seed: 0
+  epochs: 50                      # maximum
+  tol: 0.001                      # stop when fewer than this fraction of subjects change class
+  lr: 0.001
